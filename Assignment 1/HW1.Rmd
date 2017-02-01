@@ -1,0 +1,188 @@
+
+---
+title: "STP598 HW1"
+author: "Fan Hong"
+output: pdf_document
+---
+
+# Overview
+
+This work uses the **_UsedCars_** data set to illustrate the following:
+
+- The **$k$-Nearest Neighbors** (**KNN**) algorithm;
+- The **Bias-Variance Trade-Off**;
+- The use of **Cross Validation** to estimate the optimal number of nearest neighbors $k$.
+- Th use of **KNN** with more than one variable. 
+
+```{r setup, include=FALSE}
+  knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Download the data
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+  setwd("~/Dropbox (ASU)/ASU/course/STP 598 machine learning/HW1")
+  fileUrl = "https://raw.githubusercontent.com/ChicagoBoothML/DATA___UsedCars/master/UsedCars_small.csv"
+  download.file(fileUrl,destfile = "./UsedCars.csv", method = "curl")
+  dataDownloaded <-date()
+  usedcar = read.table("UsedCars.csv",sep = ",", header = T)
+```
+
+After downloding and importing the data, we can use str() and head() functions to have look at the data set. The data include 1000 instances with 7 features. The price and mileage are the features we are insterested in the first step. 
+
+```{r}
+  str(usedcar)
+  head(usedcar)
+```
+
+# Linear fitting and KNN model with single predictor
+## linear fitting and KNN with intuitive k values
+Firstly, linear fitting method and KNN model with ituitively guessing $k$ are applied to capture the relationship between the $price$ and $mileage$.  Before processing the data, the two variables are ploted against each other to get a sence about their relationship. **the _mileage_ variable is used to predict the _price_ variable**.
+
+```{r, echo=FALSE}
+    plot(usedcar$mileage,usedcar$price,xlab = 'Mileage',ylab = 'Price')
+    lm1 = lm(price ~ mileage, data = usedcar)
+    summary(lm1)
+    cor(lm1$fitted.values,lm1$residuals)
+    abline(lm1$coef,col="red",lwd=4)
+    
+    ## KNN model with 3 different k value
+    library(kknn)
+    train_data = data.frame(mileage = usedcar$mileage,price = usedcar$price)
+    test_data = data.frame(mileage = sort(usedcar$mileage))
+
+    kf5 = kknn(price~mileage,train_data,test_data,k=5,kernel = "rectangular")
+    kf50 = kknn(price~mileage,train_data,test_data,k=50,kernel = "rectangular")
+    kf200 = kknn(price~mileage,train_data,test_data,k=200,kernel = "rectangular")
+    lines(test_data$mileage,kf5$fitted.values,col="pink",lwd=2)
+    lines(test_data$mileage,kf50$fitted.values,col="blue",lwd=2)
+    lines(test_data$mileage,kf200$fitted.values,col="magenta",lwd=2)
+    legend("topright",legend=c("linear","k=5","k=50","k=200"), col=c("red","pink","blue","magenta"),lwd=2,cex=1)
+```
+
+## Prediction by the models
+
+By looking at the KNN predictors with different $k$ values, the line looks good when $k$= 50. In other words, the line is neither too flat nor too noisy. 
+
+```{r}
+  test_mile = data.frame(mileage = 100000)
+  lm_predict = predict(lm1,test_mile)
+  k50 = kknn(price~mileage,train_data,test_mile,k=50,kernel = "rectangular")
+  cat("prediction by linear model : ",lm_predict,"\n")
+  cat("prediction by knn model with k=50: ",k50$fitted.values,"\n")
+```
+
+The predicted values given by linear model and knn model with k=50 are 21362.33 and 17761.14, respectively. The linear model giving higher value can be observed by the plots. The knn model is more liktly to capture the pattern of the data set, because the relationship between mileage and price is not likely to be simplely linear. 
+
+## improving the knn model by using k-fold cross validation
+
+Privourly, we just guess three different $k$ values, more rationally methods may needed to improve the knn model by selecting a optimal $k$ value to avoid bias and variance. **Out-of-sample (OOS) error**, i.e. a certain measure of how well the predictor performs on data not used in its training process, is a quantitative value to estimate the knn model. we will perform cross validation to produce the OOS to evalute the knn model with different k values. Generally, 5-fold and 10-fold cross validation is used and **Root-mean-square deviation (RMSE)** is the predictor of goodness. 
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+    #load libraries and docv.R
+    library(MASS)
+    library(kknn)
+    helpr_repo_raw_url <- 'https://raw.githubusercontent.com/ChicagoBoothML/HelpR/master'
+    source(file.path(helpr_repo_raw_url, 'docv.R'))   # this has docvknn used below
+    
+    #do k-fold cross validation, 5 twice, 10 once
+    set.seed(99) #always set the seed to make process repeatable
+    kv = 2:100 #these are the k values (k as in kNN) we will try
+    cv1 = docvknn(matrix(usedcar$price,ncol=1),usedcar$mileage,kv,nfold=5)
+    cv2 = docvknn(matrix(usedcar$price,ncol=1),usedcar$mileage,kv,nfold=5)
+    cv3 = docvknn(matrix(usedcar$price,ncol=1),usedcar$mileage,kv,nfold=10)
+    
+    #docvknn returns error sum of squares, want RMSE
+    cv1 = sqrt(cv1/length(usedcar$mileage))
+    cv2 = sqrt(cv2/length(usedcar$mileage))
+    cv3 = sqrt(cv3/length(usedcar$mileage))
+```
+
+```{r echo = F}
+#plot
+rgy = range(c(cv1,cv2,cv3))
+plot(log(1/kv),cv1,type="l",col="red",ylim=rgy,lwd=2,cex.lab=2.0,
+xlab="log(1/k)", ylab="RMSE")
+lines(log(1/kv),cv2,col="blue",lwd=2)
+lines(log(1/kv),cv3,col="green",lwd=2)
+legend("topleft",legend=c("5-fold 1","5-fold 2","10 fold"),
+col=c("red","blue","green"),lwd=2,cex=1)
+
+#get the min
+cv = (cv1+cv2+cv3)/3 #use average
+kbest = kv[which.min(cv)]
+cat("the best k is: ",kbest,"\n")
+```
+
+## Prediction using improved KNN model
+From the above plot, the best $k$ value which is able to minimize the average cross-validation RMSE is 41, which gives best knn model to predict the price. Comparing the eyeball method, the optimized knn model by cross-validation is better. Let's use this model to predict the price of a usedcar with a mileage of 100,000 miles. The predicted price is 17216.2. 
+
+```{r}
+#fit kNN with best k and plot the fit.
+kf41 = kknn(price~mileage,train_data,test_data,k=41,kernel = "rectangular")
+k41_pred = kknn(price~mileage,train_data,test_mile,k=41,kernel = "rectangular")
+cat("prediction by best knn model : ",k41_pred$fitted.values,"\n")
+```
+
+# KNN model with two variables
+## Rescaling the variables
+Next, to make the KNN predictor more accurate, two predictors ($year$ and $mileage$) are applied to the model. To calculate the distance, we need to rescale  two variables before putting into the model by normalization.
+
+```{r}
+library(kknn)
+data = data.frame(price = usedcar$price,mileage = usedcar$mileage,year = usedcar$year)
+#normalization function
+normalize <- function(x){
+  return((x-min(x))/(max(x)-min(x)))
+}
+data_norm <- as.data.frame(lapply(data[2:3], normalize))
+par(mfrow=c(1,2)) #two plot frames
+plot(data_norm$mileage,data$price,xlab="mileage",ylab="price")
+plot(data_norm$year,data$price,xlab="year",ylab="price")
+```
+
+## Searching optimal k value with cross-validation
+After rescalling, optimal $k$ value is chose by cross-validation. Multiple CVs are runned and averaged to obtain the optimal $k$ value. 
+
+```{r message=FALSE, warning=FALSE, results='hide'}
+set.seed(99)
+cvmean = rep(0,length(kv)) #will keep average rmse here
+ndocv = 50 #number of CV splits to try
+n=length(data$price)
+cvmat = matrix(0,length(kv),ndocv) #keep results for each split
+for(i in 1:ndocv) {
+cvtemp = docvknn(data_norm,data$price,kv,nfold=10)
+cvmean = cvmean + cvtemp
+cvmat[,i] = sqrt(cvtemp/n)
+}
+cvmean = cvmean/ndocv
+cvmean = sqrt(cvmean/n)
+plot(kv,cvmean,type="n",ylim=range(cvmat),xlab="k",cex.lab=1.5)
+for(i in 1:ndocv) lines(kv,cvmat[,i],col=i,lty=3) #plot each result
+lines(kv,cvmean,type="b",col="black",lwd=2) #plot average result
+```
+
+## Evaluation of the KNN model with optimal k
+
+From the multiple runs of cross-validation, k value of 28 is chosen for the KNN model. To evaluate the performance of the KNN model, predicted price and actural price are ploted against each other. The better the model is, the closer the correlation value is to 1. The correlation is calculated to be 0.95, which means the model is fairly good.
+
+```{r}
+# KNN model with optimized k
+data_knn = data.frame(price = data$price,data_norm)
+knn28 = kknn(data_knn$price~.,data_knn,data_knn,k=28,kernel = "rectangular")
+lmf = lm(data_knn$price~.,data_knn)
+fmat = cbind(data_knn$price,knn28$fitted,lmf$fitted)
+pairs(fmat)
+cor(knn28$fitted.values,data_knn$price)
+```
+
+## Making predictions with the KNN model
+
+```{r}
+#predict price of a 2008 car with 75,000 miles.
+car.year=2008; car.mileage=7500
+year_norm = (car.year-min(data$year))/(max(data$year)-min(data$year))
+mileage_norm = (car.mileage-min(data$mileage))/(max(data$mileage)-min(data$mileage))
+near = kknn(price~.,data_knn,data.frame(year=year_norm,mileage=mileage_norm),k=28,kernel = "rectangular")
+cat("knn predicted value: ",near$fitted,"\n")
+```

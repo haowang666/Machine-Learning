@@ -1,0 +1,183 @@
+---
+title: "HW1"
+author: "Fan Hong, Dantong Huang, Xin Liu, and Hao Wang (in alphabetical order)"
+date: "January 23, 2017"
+output: html_document
+---
+
+Most of codes are from Rob's notes "knn-bvt.pdf" and the cross validation function is from "https://raw.githubusercontent.com/ChicagoBoothML/HelpR/master".
+
+## Problem 5.1
+Summary of problem 5.1:
+
+1) By "eye-ball" method we guessed a good k=50
+2) By 5-fold cross-validatifon (10 times) we obtained the best k=22
+3) We found kNN with CV has slightly better performance (in terms of covariance with true labels) than kNN with "eyeball": 0.8768632 v.s 0.8695700
+4) We made a prediction for a used car with 100,000 miles with k=22 from CV and its price is 18114.82
+
+Please check the attached code for these results:  
+```{r Clean0, include=FALSE}
+rm(list=ls())
+```
+Load library:
+```{r LL0}
+library(kknn)
+library(data.table)
+source('docv.R')
+```
+
+Load data:
+```{r LD0}
+UsedCar_small <- fread("UsedCars_small.csv",header = T,stringsAsFactors = F)
+UsedCarData = UsedCar_small
+```
+
+Do feature selection (only "mileage") and data scaling:
+```{r FSDC0}
+x = cbind(UsedCarData$mileage)
+colnames(x) = c("mileage")
+y = UsedCarData$price
+mmsc=function(x) {return((x-min(x))/(max(x)-min(x)))}
+xs = apply(x,2,mmsc) #apply scaling function to each column of x
+```
+
+“Eye-ball” guess:
+```{r, echo=FALSE}
+par(mfrow=c(2,2))
+k=10
+kf = kknn(y~x,data.frame(y,x),data.frame(x=sort(x)),k=k,kernel = "rectangular")
+plot(x,y,cex.lab=1.2,main=paste("k=",toString(k)),xlab="mileage",ylab="price")
+lines(sort(x),kf$fitted,col="red",lwd=2,cex.lab=2)
+k=30
+kf = kknn(y~x,data.frame(y,x),data.frame(x=sort(x)),k=k,kernel = "rectangular")
+plot(x,y,cex.lab=1.2,main=paste("k=",toString(k)),xlab="mileage",ylab="price")
+lines(sort(x),kf$fitted,col="red",lwd=2,cex.lab=2)
+k=50
+kf = kknn(y~x,data.frame(y,x),data.frame(x=sort(x)),k=k,kernel = "rectangular")
+plot(x,y,cex.lab=1.2,main=paste("k=",toString(k)),xlab="mileage",ylab="price")
+lines(sort(x),kf$fitted,col="red",lwd=2,cex.lab=2)
+k=70
+kf = kknn(y~x,data.frame(y,x),data.frame(x=sort(x)),k=k,kernel = "rectangular")
+plot(x,y,cex.lab=1.2,main=paste("k=",toString(k)),xlab="mileage",ylab="price")
+lines(sort(x),kf$fitted,col="red",lwd=2,cex.lab=2)
+```
+
+Do 5-fold cross validation (10 times) and find the best k:
+```{r CV0}
+kv = 2:100
+set.seed(99)
+cvmean = rep(0,length(kv)) #will keep average rmse here
+ndocv = 10 #number of CV splits to try
+n=length(y)
+cvmat = matrix(0,length(kv),ndocv) #keep results for each split
+for(i in 1:ndocv) {
+  cvtemp = docvknn(xs,y,kv,nfold=5,verbose=F)
+  cvmean = cvmean + cvtemp
+  cvmat[,i] = sqrt(cvtemp/n)
+}
+cvmean = cvmean/ndocv
+cvmean = sqrt(cvmean/n)
+Bestk = which.min(cvmean) + kv[1] - 1
+cat("Best k is: ", Bestk)
+```
+
+
+Fit using all the data with the best k from CV and compared with kNN with eyeball guess:
+```{r FitAllData0}
+
+par(mfrow=c(1,2))
+eyeballk = 50
+kf = kknn(y~x,data.frame(y,x),data.frame(x=sort(x)),k=eyeballk,kernel = "rectangular")
+plot(x,y,cex.lab=1.2,main=paste("Eyeball k=",toString(eyeballk)),xlab="mileage",ylab="price")
+lines(sort(x),kf$fitted,col="red",lwd=2,cex.lab=2)
+k=Bestk
+kf = kknn(y~x,data.frame(y,x),data.frame(x=sort(x)),k=Bestk,kernel = "rectangular")
+plot(x,y,cex.lab=1.2,main=paste("CV k=",toString(k)),xlab="mileage",ylab="price")
+lines(sort(x),kf$fitted,col="red",lwd=2,cex.lab=2)
+
+ddf = data.frame(y,xs)
+nearBestk5_1 = kknn(y~.,ddf,ddf,k=Bestk,kernel = "rectangular")
+neareyeball = kknn(y~.,ddf,ddf,k=eyeballk,kernel = "rectangular")
+fmat = cbind(y,nearBestk5_1$fitted,neareyeball$fitted)
+colnames(fmat)=c("y",paste("kNN CV",toString(Bestk)),paste("kNN Eyeball",toString(eyeballk)))
+pairs(fmat)
+print(cor(fmat))
+```
+We see that kNN with k from cross validation has slightly better performance than kNN with k from "eyeball".
+
+Predict the price of a used car with 100,000 miles:
+```{r Pred100000}
+x1=100000
+x1s = (x1-min(x[,1]))/(max(x[,1])-min(x[,1]))
+near = kknn(y~.,data.frame(y,xs),data.frame(mileage=x1s),k=Bestk,kernel = "rectangular")
+cat("knn predicted value: ",near$fitted,"\n")
+```
+
+\newpage
+
+## Problem 6.1
+Summary of problem 6.1:
+
+1) By 10-fold cross-validatifon (10 times) we obtained the best k=28
+2) We made a prediction for a used car with 100,000 miles and 2008 year with k=28 and its price is 31596.43
+3) We found kNN with ("mileages"", "year") has much better performance (in terms of covariance with true labels) than kNN with only "mileages": 0.9578319 v.s. 0.8768632  
+
+Please check the attached code for these results:  
+
+Do feature selection ("mileage" and "year") and data scaling: 
+```{r FSDC}
+x = cbind(UsedCarData$mileage,UsedCarData$year)
+colnames(x) = c("mileage","year")
+y = UsedCarData$price
+mmsc=function(x) {return((x-min(x))/(max(x)-min(x)))}
+xs = apply(x,2,mmsc) 
+```
+<!--
+Plot price v.s. mileage and price v.s. year:
+```{r price v.s. feature}
+par(mfrow=c(1,2))
+plot(x[,1],y,xlab="mileage",ylab="price")
+plot(x[,2],y,xlab="year",ylab="price")
+```
+-->
+
+Run cross validation and find the best k:
+```{r CV}
+kv = 2:100 
+set.seed(99)
+cvmean = rep(0,length(kv)) #will keep average rmse here
+ndocv = 10 #number of CV splits to try
+n=length(y)
+cvmat = matrix(0,length(kv),ndocv) #keep results for each split
+for(i in 1:ndocv) {
+  cvtemp = docvknn(xs,y,kv,nfold=10,verbose=F)
+  cvmean = cvmean + cvtemp
+  cvmat[,i] = sqrt(cvtemp/n)
+}
+cvmean = cvmean/ndocv
+cvmean = sqrt(cvmean/n)
+plot(kv,cvmean,type="n",ylim=range(cvmat),xlab="k",cex.lab=1.5)
+for(i in 1:ndocv) lines(kv,cvmat[,i],col=i,lty=3) 
+lines(kv,cvmean,type="b",col="black",lwd=3) 
+Bestk = which.min(cvmean) + kv[1] - 1
+cat("Best k is: ", Bestk, "\n")
+```
+
+Predict the price of a used car with 75,000 miles, year 2008
+```{r Predit}
+ddf = data.frame(y,xs)
+x1=75000; x2=2008
+x1s = (x1-min(x[,1]))/(max(x[,1])-min(x[,1]))
+x2s = (x2-min(x[,2]))/(max(x[,2])-min(x[,2]))
+near = kknn(y~.,ddf,data.frame(mileage=x1s,year=x2s),k=Bestk,kernel = "rectangular")
+cat("knn predicted value: ",near$fitted,"\n")
+```
+
+Compare kNN (k=28) with (mile,year) with kNN (k=22) with mile:
+```{r FitAllData}
+nearBestk6_1 = kknn(y~.,ddf,ddf,k=Bestk,kernel = "rectangular")
+fmat = cbind(y,nearBestk6_1$fitted,nearBestk5_1$fitted)
+colnames(fmat)=c("y", "kNN with miles and year","kNN with miles")
+pairs(fmat)
+print(cor(fmat))
+```
