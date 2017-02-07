@@ -1,0 +1,204 @@
+---
+title: 'Assignment 3: BAGGING, Boosting and regressions'
+author: "Hao Wang"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Try trees, random forests, boosting on the usedcars.csv data.
+
+1. Split the data into train, validate, and test subsets.
+
+2. Do a few fits from the different approaches and see how they do
+on the validation data. 
+Note, try it first with mileage and year, then try using all the x
+variables.
+Since you automatically get the right x's as factors when you use
+read.csv on usedcars.csv all you have to do is y~ . and use the
+full data frame.
+
+3. While you are at it, how does a multiple regression do??
+
+4. Pick a method you like and predict on test using train and validate
+combined.
+
+5. What is your out of sample RMSE???!!!
+
+
+#Load Data, the larger car.csv dataset.
+```{r, message=FALSE}
+library(tree)
+library(randomForest)
+library(gbm)#boosting
+library(ggplot2)
+mydata <- read.csv('https://raw.githubusercontent.com/ChicagoBoothML/DATA___UsedCars/master/UsedCars.csv', sep= ",")
+```
+
+#Spliting train, validation, and test
+```{r, message=FALSE}
+names(mydata)
+set.seed(99)
+n <-nrow(mydata)
+n1 <- floor(n/2) #train
+n2 <- floor(n/4) #validation
+n3 <- n- n1 -n2  #test
+ii <- sample(1:n, n) # a funtion of sample
+cartrain <- mydata[ii[1:n1],]
+carval   <- mydata[ii[n1+1:n2],]
+cartest  <- mydata[ii[n1 +n2 +1: n3],]
+```
+
+#Using a simple tree
+To fit a simple trees, I first use CV to find the best size of tree (based on training data), then validate this tree on validation data. The first tree is based on mileage and year.
+
+##Tree: mileage and year predicting price
+```{r, message=FALSE}
+library(rpart)
+attach(cartrain)
+set.seed(99)
+#--------------------------------------------------
+#fit a big tree using rpart.control
+big.tree = rpart(price~mileage + year,method="anova",data=cartrain,
+control=rpart.control(minsplit=2,cp=.0005))
+#nbig = length(unique(big.tree$where))
+#cat("size of big tree: ",nbig,"\n")
+#--------------------------------------------------
+#look at CV results
+#plotcp(big.tree)
+iibest = which.min(big.tree$cptable[,"xerror"]) #which has the lowest error
+bestcp=big.tree$cptable[iibest,"CP"]
+bestsize = big.tree$cptable[iibest,"nsplit"]+1
+cat("Best size is ", bestsize, "\n")
+#--------------------------------------------------
+#prune to good tree
+best.tree = prune(big.tree,cp=bestcp)
+#--------------------------------------------------
+#get fits
+yhat1.treeval <- predict(best.tree, newdata =carval)
+plot(carval$price,yhat1.treeval)
+abline(0,1,col="red",lwd=2)
+cor.tree.1 <- cor(carval$price, yhat1.treeval)
+cor.tree.1
+detach(cartrain)
+```
+
+
+##Tree: price with all predictors
+```{r, message=FALSE}
+attach(cartrain)
+set.seed(99)
+#--------------------------------------------------
+#fit a big tree using rpart.control
+big.tree = rpart(price~.,method="anova",data=cartrain,
+control=rpart.control(minsplit=2,cp=.0005))
+#nbig = length(unique(big.tree$where))
+#cat("size of big tree: ",nbig,"\n")
+#--------------------------------------------------
+#look at CV results
+#plotcp(big.tree)
+iibest = which.min(big.tree$cptable[,"xerror"]) #which has the lowest error
+bestcp=big.tree$cptable[iibest,"CP"]
+bestsize = big.tree$cptable[iibest,"nsplit"]+1
+cat("Best size is ", bestsize, "\n")
+#--------------------------------------------------
+#prune to good tree
+best.tree = prune(big.tree,cp=bestcp)
+#--------------------------------------------------
+#get fits
+yhat2.treeval <- predict(best.tree, newdata =carval)
+plot(carval$price,yhat2.treeval)
+abline(0,1,col="red",lwd=2)
+cor.tree.2 <- cor(carval$price, yhat2.treeval)
+cor.tree.2
+detach(cartrain)
+```
+
+#Fit with random forest.
+```{r, message=FALSE, warning=FALSE}
+attach(cartrain)
+set.seed(99)
+#fit using random forests (on train, predict on val)
+#mtry is the number of variables to try, often we pick sqrt(p)
+rffit1 = randomForest(price~ year+ mileage, data=cartrain,mtry=4,ntree=500)
+yhat1.rfval = predict(rffit1,newdata=carval)# predictions on carval
+rffit2 = randomForest(price~ .,data=cartrain,mtry=4,ntree=500)
+yhat2.rfval = predict(rffit2,newdata=carval)
+detach(cartrain)
+```
+
+
+#Fit with boosting.
+```{r, message=FALSE, warning=FALSE}
+attach(cartrain)
+set.seed(99)
+#fit using boosting
+boostfit1 = gbm(price~ year+ mileage,data=cartrain,distribution="gaussian",
+interaction.depth=1,n.trees=5000,shrinkage=.01)
+yhat1.boostval=predict(boostfit1,newdata=carval,n.trees=5000)
+
+boostfit2 = gbm(price~ .,data=cartrain,distribution="gaussian",
+interaction.depth=1,n.trees=5000,shrinkage=.01)
+yhat2.boostval=predict(boostfit2,newdata=carval,n.trees=5000)
+detach(cartrain)
+```
+
+
+#Plot out of sample fits
+```{r}
+pairs(cbind(carval$price,yhat1.treeval,yhat1.rfval,yhat1.boostval))
+print(cor(cbind(carval$price,yhat1.treeval,yhat1.rfval,yhat1.boostval)))
+#----------------------------------------------------------------
+pairs(cbind(carval$price,yhat2.treeval,yhat2.rfval,yhat2.boostval))
+print(cor(cbind(carval$price,yhat2.treeval,yhat2.rfval,yhat2.boostval)))
+```
+
+#Try with linear regression
+I'm comparing linear regression with boosting and random forest, as it turns out boosting and random forest fit well.
+
+```{r, message = FALSE, warning=FALSE}
+attach(cartrain)
+lm2 <- lm(price ~., data=cartrain)
+yhat2.lmval <- predict(lm2, newdata=carval)
+cor(yhat2.lmval, carval$price)
+detach(cartrain)
+```
+```{r}
+pairs(cbind(carval$price,yhat2.boostval, yhat2.rfval, yhat2.lmval))
+print(cor(cbind(carval$price,yhat2.boostval, yhat2.rfval, yhat2.lmval)))
+```
+
+It seems the regression does not fit as boosting or random forest. 
+
+
+#Pick boosting (seems faster) and predict test with train and validation combined
+
+```{r}
+cartrainval <- rbind(cartrain, carval)
+set.seed(99)
+#--------------------------------------------------
+#refit boosting
+boostfit2 = gbm(price~.,data=cartrainval,distribution="gaussian",
+interaction.depth=1,n.trees=5000,shrinkage=.01)
+boosttestpred=predict(boostfit2,newdata=cartest,n.trees=5000)
+
+#--------------------------------------------------
+#plot test y vs test predictions
+plot(cartest$price,boosttestpred)
+abline(0,1,col="red",lwd=2)
+#--------------------------------------------------
+rmse = sqrt(mean((cartest$price-boosttestpred)^2))
+cat("rmse on test for boosting: ",rmse,"\n")
+#--------------------------------------------------
+#variable importance from boosting
+summary(boostfit2)
+```
+
+
+
+
