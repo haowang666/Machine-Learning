@@ -1,0 +1,147 @@
+---
+title: 'Assignment 4: Hocky Data'
+author: "Hao Wang"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Load Data & Split Train and Test
+```{r, message=FALSE, warning=FALSE}
+library(tree)
+library(randomForest)
+library(gbm)#boosting
+library(ggplot2)
+library(rpart)
+library(pROC)
+mydata <- read.csv('http://rob-mcculloch.org/data/pens.csv')
+#summary(hd)
+names(mydata)
+#convert results to factors
+mydata$oppcall <- as.factor(mydata$oppcall)
+names(mydata)[1]="y"
+set.seed(99)
+n <-nrow(mydata)
+n1 <- floor(n/2) #train
+n2 <- n- n1  #test
+ii <- sample(1:n, n) # a funtion of sample
+hdtrain <- mydata[ii[1:n1],]
+hdtest   <- mydata[ii[n1+1:n2],]
+```
+
+# Tree Method
+## Tree Fitting
+```{r, message=FALSE}
+attach(hdtrain)
+set.seed(99)
+#--------------------------------------------------
+#fit a big tree using rpart.control
+big.tree = rpart(y~.,method="class", data=hdtrain,
+control=rpart.control(minsplit=2,cp=.0005)) 
+nbig = length(unique(big.tree$where))
+cat("size of big tree: ",nbig,"\n")
+#--------------------------------------------------
+#look at CV results
+#plotcp(big.tree)
+iibest = which.min(big.tree$cptable[,"xerror"]) #which has the lowest error
+bestcp=big.tree$cptable[iibest,"CP"]
+bestsize = big.tree$cptable[iibest,"nsplit"]+1
+cat("Best size is ", bestsize, "\n")
+#--------------------------------------------------
+#prune to good tree
+best.tree = prune(big.tree,cp=bestcp)
+#--------------------------------------------------
+
+```
+
+
+## ROC Curve???
+```{r}
+#store predict
+phatL <- list()
+#predict using tree
+phat = predict(best.tree, newdata =hdtest, type="prob")
+phatL$tree = matrix(phat,ncol=2) #tree phat
+rocCurve = roc(response = hdtest$y,predictor=phatL$tree[,2])
+plot(rocCurve)
+```
+
+
+
+#Random forest
+
+```{r, message=FALSE}
+##settings for randomForest
+p=ncol(hdtrain)-1
+mtryv = c(p,sqrt(p))
+ntreev = c(500,1000)
+setrf = expand.grid(mtryv,ntreev)
+colnames(setrf)=c("mtry","ntree")
+phatL$rf = matrix(0.0,nrow(hdtest),nrow(setrf))
+###fit rf
+library(randomForest)
+for(i in 1:nrow(setrf)) {
+cat("on randomForest fit ",i,"\n")
+print(setrf[i,])
+#fit and predict
+frf = randomForest(y~.,data=hdtrain,mtry=setrf[i,1],ntree=setrf[i,2])
+phat = predict(frf,newdata=hdtest,type="prob")[,2]
+phatL$rf[,i]=phat
+}
+
+rocCurve = roc(response = hdtest$y,predictor=phatL$rf[,1])
+cat("auc, rf 1: ", auc(rocCurve),"\n")
+plot(rocCurve)
+
+
+rocCurve = roc(response = hdtest$y,predictor=phatL$rf[,2])
+cat("auc, rf 2: ", auc(rocCurve),"\n")
+
+
+
+```
+
+
+
+
+#Boosting
+```{r}
+##settings for boosting
+idv = c(2,4); ntv = c(1000,5000); shv = c(.1,.01)
+setboost = expand.grid(idv,ntv,shv)
+colnames(setboost) = c("tdepth","ntree","shrink")
+phatL$boost = matrix(0.0,nrow(hdtest),nrow(setboost))
+trainDfB = hdtrain; trainDfB$y = as.numeric(hdtrain$y)-1
+testDfB = hdtest; testDfB$y = as.numeric(hdtest$y)-1
+##fit boosting
+library(gbm)
+tm1 = system.time({ #get the time, will use this later
+  for(i in 1:nrow(setboost)) {
+    cat("on boosting fit ",i,"\n")
+    print(setboost[i,])
+    ##fit and predict
+    fboost = gbm(y~.,data=trainDfB,distribution="bernoulli",
+                 n.trees=setboost[i,2],interaction.depth=setboost[i,1],
+                 shrinkage=setboost[i,3])
+    phat = predict(fboost,newdata=testDfB,n.trees=setboost[i,2],type="response")
+    phatL$boost[,i] = phat
+  }
+})
+```
+```{r}
+cat("auc, logit: ", auc(rocCurve),"\n")
+rocCurve = roc(response = hdtest$y,predictor=phatL$boost[,5])
+cat("auc, boost 5: ", auc(rocCurve),"\n")
+rocCurve = roc(response = hdtest$y,predictor=phatL$boost[,4])
+cat("auc, boost 4: ", auc(rocCurve),"\n")
+plot(rocCurve)
+```
+
+
+
+
