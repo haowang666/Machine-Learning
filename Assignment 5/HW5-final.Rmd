@@ -1,0 +1,139 @@
+---
+title: "HW5"
+author: "Fan Hong, Dantong Huang, Xin Liu, and Hao Wang (in alphabetical order)"
+date: "Feb 28, 2017"
+output: html_document
+---
+
+## Load Hockey Data
+```{r Clean0, include=FALSE}
+rm(list=ls())
+cat("\014")
+```
+
+```{r load hockey data}
+# Read data #
+hd <- read.csv('http://rob-mcculloch.org/data/pens.csv')
+names(hd)
+
+# Split data #
+set.seed(99)
+n <-nrow(hd)
+n1=floor(n/2)
+n2=n-n1
+ii = sample(1:n,n)
+hdtrain=hd[ii[1:n1],]
+hdtest = hd[ii[n1+1:n2],]
+AIC = list()
+BIC = list()
+```
+
+## Comparison of logistic fit with the previous methods
+```{r logit regression, message=FALSE}
+# Logit #
+lg = glm(as.factor(oppcall)~.,data=hdtrain,family=binomial)
+lg.fitprob = predict(lg,hdtest,type="response")
+
+### ROC Curve ###
+library(pROC)
+rocCurve = roc(response = hdtest$oppcall, predictor=lg.fitprob)
+cat("auc, logit: ", auc(rocCurve),"\n")
+plot(rocCurve)
+```
+
+Logistic regression has very similar ROC curve and AUC value with decision tree, random forest and boosting tree algorithms. All of these algorithms fail to achieve good predictions.
+
+## Comparison of AIC and BIC with and without goaldiff
+```{r }
+### logit without goaldiff###
+lg.nogd = glm(as.factor(oppcall)~timespan+laghome+inrow2,data=hdtrain,family=binomial)
+
+AIC$withoutgd = AIC(lg.nogd)
+BIC$withoutgd = BIC(lg.nogd)
+cat("AIC and BIC without goaldiff are: ",AIC$withoutgd, BIC$withoutgd,"\n")
+
+AIC$withgd = AIC(lg)
+BIC$withgd = BIC(lg)
+cat("AIC and BIC with goaldiff are: ",AIC$withgd, BIC$withgd,"\n")
+```
+AIC and BIC with goaldiff is smaller than that without goaldiff, it means goaldiff is an important feature for logistic regression.
+
+## Load Satisfaction Data
+```{r }
+# Read data #
+sd <- read.csv('http://rob-mcculloch.org/data/satisfaction.csv')
+names(sd)
+sdtrain = sd # use all samples to fit
+AIC = list()
+BIC = list()
+```
+
+## Logistic regression with gender and age
+```{r }
+# Logit #
+lg <- glm(as.factor(yrb)~gender+age, data = sdtrain, family = binomial)
+AIC$ga = AIC(lg)
+BIC$ga = BIC(lg)
+cat("AIC and BIC with gender and age are: ", AIC$ga, BIC$ga)
+```
+
+## Logistic regression with gender
+```{r}
+lg <- glm(as.factor(yrb)~gender, data = sdtrain, family = binomial)
+AIC$g = AIC(lg)
+BIC$g = BIC(lg)
+cat("AIC and BIC with gender are: ", AIC$g, BIC$g)
+```
+## Logistic regression with age
+```{r}
+lg <- glm(as.factor(yrb)~age, data = sdtrain, family = binomial)
+AIC$a = AIC(lg)
+BIC$a = BIC(lg)
+cat("AIC and BIC with gender are: ", AIC$a, BIC$a)
+```
+In terms of AIC, logistic regression with age is the best. In terms of BIC, logistic regression with age is also the best. 
+
+## Multinomial regression with gender and age
+```{r, message=FALSE }
+### multinomial regression ###
+library(nnet)
+mlg <- multinom(as.factor(yr3)~gender+age, data = sdtrain)
+AIC$ga = AIC(mlg)
+BIC$ga = BIC(mlg)
+cat("AIC and BIC with gender and age are: ", AIC$ga, BIC$ga)
+```
+
+## Multinomial regression with gender
+```{r, message=FALSE }
+mlg <- multinom(as.factor(yr3)~gender, data = sdtrain)
+AIC$g = AIC(mlg)
+BIC$g = BIC(mlg)
+cat("AIC and BIC with gender and age are: ", AIC$g, BIC$g)
+```
+
+## Multinomial regression with age
+```{r, message=FALSE }
+## Logistic regression with gender and age
+mlg <- multinom(as.factor(yr3)~age, data = sdtrain)
+AIC$a = AIC(mlg)
+BIC$a = BIC(mlg)
+cat("AIC and BIC with gender and age are: ", AIC$a, BIC$a)
+```
+
+## Comparison of AIC and BIC 
+In terms of AIC, multinomial regression with age is the best. In terms of BIC, multinomial regression with age is also the best. These results are consistent with logistic regression above.
+
+
+## Coefficients (age) Interpretation 
+```{r }
+print(summary(mlg))
+```
+
+From the summary information of multinomial regression with age, we have
+\begin{align*}
+\log \frac{P(\text{yr3=good})}{P(\text{yr3=bad})} = -1.244 + 0.684 \cdot \text{age}\\
+\log \frac{P(\text{yr3=ok})}{P(\text{yr3=bad})} = -0.238 + 0.637 \cdot \text{age}
+\end{align*}
+From equations above, we know age has positive correlation with log-likelihood ratio of good v.s. bad and ok v.s. bad. Specifically, one unit increasing in age will result in 0.684 increasing in log-likelihood ratio of good v.s. bad and one unit increasing in age will result in 0.637 increasing in likehood of ok v.s. bad. In conclusion, an older person is more likely to like his town.
+
+
