@@ -1,0 +1,465 @@
+---
+output: 
+  bookdown::pdf_document2:
+    toc: true
+    citation_package: natbib
+    keep_tex: false
+    fig_caption: true
+    latex_engine: pdflatex
+title: "STP598 Final Project: Predicting 2016 Election Vote Choices"
+author: 
+- Xin Liu (alphabetical)
+- Fan Hong
+- Dantong Huang
+- Hao Wang 
+- Arizona State University
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+geometry: margin=1in
+fontfamily: mathpazo
+fontsize: 12pt
+spacing: single
+papersize: letter
+header-includes: \usepackage{graphicx, longtable, float, subfigure}
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Description of our study
+
+In this study we want to predict vote choice in the recent 2016 presidential election based on a high-quality survey data: Cooperative Congressional Election Study [click here](https://cces.gov.harvard.edu/news/announcing-2016-cooperative-congressional-election-study). Starting in 2006, CCES is a combined effort of 39 universities. The study has continued every year since. Then joint efforts have produced national sample surveys in excess of 50,000 respondents in every federal election since. Professors Stephen Ansolabehere of Harvard University and Brian Schaffner of the University of Massachusetts coordinate the CCES and YouGov in Palo Alto, CA, conducts and distributes the surveys. 
+
+In our group project, we use the recent-released 2016 CCES, which includes 64600 observations in total. Due to the missingness of some variables, we ended up with around 35000 observations. This sample size is large enough to achieve consistent and stable estimates. We have several goals in mind:
+
+1. Variable slection: Find out the most influential predictors among all the possible variables 
+2. Model prediction: Find out the method with the highest correct-prediction rates. 
+
+
+
+# Variable Selection and Data Cleaning 
+
+Based on our previous knowledge, we prepared dataset based on two parts.  The first part includes all the possible demographic predictors including gender, race, marriage status, state, religion, occupation, employment status, home ownership, family income. In the second part we include predictors involving partisanship and other political attitude variables: party ID, evaluation of national economy, evaluation on security, on healthcare, on trade policies, on defence and security, as well as approval ratings of the House, Senate, the Court and the former President Obama. Total we include 36 variables.
+
+We did multiple approaches to clean the data and make it appropriate for analyses. First, since we only look at vote choice, people who did not vote in the 2016 Election were dropped in our sample. Second, we did a series of transformation to make it suiatble for shrinkage regression: the original dataset is a survey data, each question is read by R as `ordered factors`. Some of them like `state`, `race`, `religion` are apparently not ordered, but just categorical. We coded these variables as `factor`.  
+
+We lost about 8000 observations due to the **not voted** option. Besides, we lost another 6000 observations in the question of family income: these individuals choose **prefer not to answer** option in this question. To simplify our prediction outcomes, we ignored those people who voted for Jill Stein, Gary Johnson or other minority candidates, there are about 2000 people in the survey who voted for them. 
+
+
+
+
+```{r data, echo=TRUE, message=FALSE, warning=FALSE}
+#read data
+load(url("https://dataverse.harvard.edu/api/access/datafile/3004425?format=RData&gbrecs=true"))
+
+library(dplyr)
+library(glmnet)
+library(pROC)
+library(rpart)
+library(randomForest)
+library(xgboost)
+
+
+mydata <- dplyr::select(x, 
+                        CC16_410a, #vote for
+                        gender, #gender
+                        educ, #education
+                        race, #race
+                        marstat, #marriage
+                        inputstate, #state
+                        religpew, #religion
+                        industryclass, #industry class
+                        ownhome, #home owner
+                        immstat, #immigrant
+                        faminc, #family income
+                        employ, #employment status
+                        pid7, #party id
+                        CC16_302, #national econ better: past
+                        CC16_303, #homehold income better: past
+                        CC16_304, # national econ better: next
+                        CC16_307, # feel safe about police
+                        CC16_321a, 
+                        CC16_321b,
+                        CC16_320a,
+                        CC16_320b,
+                        CC16_331_1,
+                        CC16_331_2,
+                        CC16_331_3,
+                        CC16_331_7,
+                        CC16_332a,
+                        CC16_332b, 
+                        CC16_332c, 
+                        CC16_332f,
+                        CC16_334c,
+                        CC16_334d,
+                        CC16_335, 
+                        CC16_337_1,
+                        CC16_337_2,
+                        CC16_337_3)
+
+#select only trump and clinton
+mydata <- mydata %>%
+          filter(CC16_410a %in% 
+          c("Donald Trump (Republican)", 
+            "Hillary Clinton (Democrat)"))
+
+#relevel Trump 0 Clinton 1
+mydata$CC16_410a <- as.numeric(mydata$CC16_410a) - 1
+mydata$CC16_410a <- as.factor(mydata$CC16_410a)
+
+
+#covert ordered to factor
+mydata$race <- factor(mydata$race, ordered = FALSE)
+mydata$inputstate <- factor(mydata$inputstate, ordered = FALSE)
+mydata$religpew <- factor(mydata$religpew, ordered = FALSE)
+mydata$inputstate <- factor(mydata$inputstate, ordered = FALSE)
+mydata$industryclass <- factor(mydata$industryclass, ordered = FALSE)
+mydata$faminc[mydata$faminc == "Prefer not to say"] <- NA
+
+
+mydata <- na.omit(mydata)
+```
+
+
+
+
+# LASSO
+
+We first conduct our analysis with LASSO. LASSO requires additional transformation of this dataset. Since L1 regularization cannot handle factor data, we did several additional steps: 
+
+1. We transform the categorical variables with k levels like state into k-1 dummies
+2. We convert the ordered factor variables like income into numeric variables. 
+
+
+## Data Cleaning
+
+```{r, message=FALSE}
+analysis3 <- mydata %>%
+             select(race, 
+                inputstate, 
+                religpew, 
+                industryclass)
+
+analysis4 <- mydata %>%
+             select(-race, 
+                -inputstate, 
+                -religpew, 
+                -industryclass)
+#coerce to numeric values
+analysis4 <- as.data.frame(sapply(analysis4, as.numeric))
+
+############################################################
+## dummies for race, inputstate, religpew, industryclass, R automatically expands factors into dummies
+fm = as.formula(~.)
+xm <- model.matrix(fm, analysis3)
+xm <- as.data.frame(xm)
+xm <- dplyr::select(xm, -1)
+lasso.data <- cbind.data.frame(analysis4, xm)
+```
+
+
+
+## Model Evaluation
+
+```{r, message=FALSE}
+#data split
+n = nrow(lasso.data)
+n1 = floor(n/3)
+data.test = sample_n(lasso.data, n1)
+data.train  = setdiff(lasso.data, data.test)
+
+#lasso train
+set.seed(99)
+y <- as.factor(data.train$CC16_410a) #Trump 0 Clinton 1
+x <- as.matrix(data.train[, 2:ncol(lasso.data)])
+
+cvfit <- cv.glmnet(x, 
+                   y, 
+                   nfolds = 10, #10 fold
+                   family = "binomial",
+                   alpha = 1) #Lasso
+
+plot(cvfit)
+
+x.test <- as.matrix(data.test[, 2:ncol(data.test)])
+lasso.pred <- predict(cvfit, newx = x.test, s = "lambda.min", type = "class")
+lasso.pred <- as.numeric(lasso.pred)
+
+rocCurve = pROC::roc(response = data.test$CC16_410a, predictor = lasso.pred)
+plot(rocCurve)
+cat("auc LASSO", auc(rocCurve),"\n")
+```
+
+
+
+# Ridge
+
+The codes between ridge and LASSO are very similar, all we need to change is the alpha option
+
+```{r, message=FALSE}
+cvfit <- cv.glmnet(x,         
+                  y,
+                  nfolds = 10, #10 fold
+                  family = "binomial",
+                  alpha = 0) #Ridge
+
+plot(cvfit)
+ridge.pred <- predict(cvfit, newx = x.test, s = "lambda.min", type = "class")
+ridge.pred <- as.numeric(lasso.pred)
+
+
+rocCurve = roc(response = data.test$CC16_410a, predictor = ridge.pred)
+plot(rocCurve)
+cat("auc  Ridge", auc(rocCurve),"\n")
+```
+
+
+
+
+# Tree-Based Method
+
+```{r, message=FALSE}
+#data split
+n <- nrow(mydata)
+n1 <- floor(n/3)
+data.test <- sample_n(mydata, n1)
+data.train  <- setdiff(mydata, data.test)
+
+set.seed(99)
+big.tree = rpart(CC16_410a ~ .,
+                 method = "class",
+                 data = data.train,
+                 control = rpart.control(minsplit = 50, cp = .0001))
+
+nbig = length( unique(big.tree$where) )
+
+cat("size of big tree: ", nbig, "\n")
+
+iibest = which.min(big.tree$cptable[,"xerror"]) #which has the lowest error
+bestcp = big.tree$cptable[iibest,"CP"]
+bestsize = big.tree$cptable[iibest,"nsplit"] + 1
+best.tree = prune(big.tree,cp = bestcp)
+
+tree.pred = predict(best.tree,newdata = data.test,type = "prob")[,2]
+
+rocCurve = roc(response = data.test$CC16_410a,predictor = tree.pred)
+plot(rocCurve)
+cat("auc, tree: ", auc(rocCurve),"\n")
+```
+
+
+# Random Forest
+
+```{r, message=FALSE}
+#data split
+n <- nrow(mydata)
+n1 <- floor(n/3)
+data.test <- sample_n(mydata, n1)
+data.train  <- setdiff(mydata, data.test)
+
+set.seed(99)
+p = ncol(data.train) - 1
+mtryv = c(p,sqrt(p))
+ntreev = c(4,16,32,64,128,256)
+setrf = expand.grid(mtryv,ntreev)
+colnames(setrf) = c("mtry","ntree")
+rf = matrix(0.0,nrow(data.test),nrow(setrf))
+
+###fit rf
+
+for (i in 1:nrow(setrf)) {
+cat("on randomForest fit ", i, "\n")
+print(setrf[i,])
+#fit and predict
+frf = randomForest(CC16_410a ~. ,
+                   data = data.train,
+                   mtry = setrf[i,1],
+                   ntree = setrf[i,2])
+phat = predict(frf,
+               newdata = data.test,
+               type = "prob")[,2]
+rf[,i] = phat
+}
+
+
+for (i in 1:ncol(rf)) {
+  rocCurve = roc(response = data.test$CC16_410a,
+                 predictor = rf[,i])
+  cat("auc, random forest ", i,": ", auc(rocCurve),"\n")
+}
+
+importance(frf)
+library(caret)
+varImpPlot(frf,type = 2)
+# The 5th rf fit
+rocCurve = roc(response = data.test$CC16_410a, predictor = rf[, 5])
+plot(rocCurve)
+```
+
+
+# Boosting
+
+
+```{r}
+##settings for boosting
+idv = c(2,4)
+ntv = c(1000,5000)
+shv = c(.1,.01)
+setboost = expand.grid(idv, ntv, shv)
+colnames(setboost) = c("tdepth","ntree","shrink")
+boost = matrix(0.0,
+               nrow(data.test),
+               nrow(setboost))
+
+trainDfB = data.train
+trainDfB$CC16_410a = as.numeric(data.train$CC16_410a) - 1
+
+testDfB = data.test
+testDfB$CC16_410a = as.numeric(data.test$CC16_410a) - 1
+
+##fit boosting
+library(gbm)
+tmboost = system.time({#get the time, will use this later
+  for (i in 1:nrow(setboost)) {
+    cat("on boosting fit ",i,"\n")
+    print(setboost[i,])
+    ##fit and predict
+    fboost = gbm(CC16_410a ~.,
+                 data = trainDfB,
+                 distribution = "bernoulli",
+                 n.trees = setboost[i,2],
+                 interaction.depth = setboost[i,1],
+                 shrinkage = setboost[i,3])
+    phat = predict(fboost,
+                   newdata = testDfB,
+                   n.trees = setboost[i,2],
+                   type = "response")
+    boost[,i] = phat
+  }
+})
+
+
+
+summary(fboost)
+for (n in 1:ncol(boost)){
+  rocCurve = roc(response = data.test$CC16_410a,
+                 predictor = boost[,n])
+  cat("auc, boost ",n,": ", auc(rocCurve),"\n")
+}
+
+```
+
+
+
+# GLM
+
+Based on the random forest most important variables, we use the basic GLM function to check how better other methods are
+
+
+```{r, message=FALSE}
+#data split
+library(dplyr)
+n = nrow(mydata)
+n1 = floor(n/3)
+data.train = sample_n(mydata, n1)
+data.test  = setdiff(mydata, data.train)
+
+glm <- glm(CC16_410a ~ CC16_320a + pid7 , data = data.train, family = "binomial" )
+glm.pred <- predict(glm, newdata = data.test, type = "response")
+glm.pred <- as.numeric(glm.pred > 0.5)
+
+rocCurve2 = roc(response = data.test$CC16_410a, predictor = glm.pred)  
+plot(rocCurve2)
+library(caret)
+confusionMatrix(data.test$CC16_410a, glm.pred)
+cat("auc GLM", auc(rocCurve2),"\n")
+```
+
+
+
+
+# xgboost
+
+```{r, message=FALSE}
+mydata$CC16_410a <- as.numeric(mydata$CC16_410a) - 1
+
+### Data Splitting ###
+set.seed(99)
+n = nrow(mydata)
+n1 = floor(n/2)
+n2 = floor(n/4)
+n3 = n - n1 - n2
+ii = sample(1:n)
+Train = mydata[ii[1:n1],]
+Valid = mydata[ii[n1+1:n2],]
+Test =  mydata[ii[n1+n2+1:n3],]
+
+library("xgboost")
+require(Matrix)
+
+TrainLabel <- Train$CC16_410a
+TrainSparseData <- sparse.model.matrix(CC16_410a~.-1, data = Train)
+TrainSparseData <- TrainSparseData[,colSums(TrainSparseData!=0)!=0]
+xgTrain <- xgb.DMatrix(data = TrainSparseData, label=TrainLabel)
+
+ValidLabel <- Valid$CC16_410a
+ValidSparseData <- sparse.model.matrix(CC16_410a~.-1, data = Valid)
+ValidSparseData <- ValidSparseData[,colSums(ValidSparseData!=0)!=0]
+xgValid <- xgb.DMatrix(data=ValidSparseData, label=ValidLabel)
+
+watchlist <- list(train=xgTrain,test=xgValid)
+param <- list("objective" = "binary:logistic",
+              "eta" = 0.1,
+              "gamma" = 0.2,
+              "min_child_weight" = 5,
+              "subsample" = .8,
+              "colsample_bytree" = .8,
+              "scale_pos_weight" = 1.0,
+              "verbose" = T,
+              "max_depth" = 4
+)
+
+nrounds <- 500
+tmxgboost = system.time({
+bst <- xgb.train(params=param, data=xgTrain, 
+                 nrounds=nrounds, watchlist=watchlist, early_stopping_rounds=50)
+
+TestLabel <- Test$CC16_410a
+TestSparseData <- sparse.model.matrix(CC16_410a~.-1, data = Test)
+TestSparseData <- TestSparseData[,colSums(TestSparseData!=0)!=0]
+
+pred <- predict(bst, TestSparseData)
+prediction <- as.numeric(pred>0.5)
+err <- mean(prediction != TestLabel)
+cat("error with xgboost is ", err)
+})
+
+top_n = 15
+importance_matrix <- xgb.importance(colnames(TrainSparseData), model = bst)
+print(importance_matrix[1:top_n,])
+xgb.plot.importance(importance_matrix, top_n = top_n)
+
+```
+
+Compare `xgboost` and `boost`: `xgboost` much faster, though less accurate. 
+
+```{r}
+tmboost
+tmxgboost
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

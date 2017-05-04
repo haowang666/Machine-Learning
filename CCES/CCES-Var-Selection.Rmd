@@ -1,0 +1,208 @@
+---
+title: "CCES"
+author: "Hao Wang"
+date: "April 1, 2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Variable Selection
+This is [CCES 2016](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi%3A10.7910/DVN/GDF6Z0), which is short for cooperative congressional election survey. This is a high-quality survey with large-N subjects. Comparing with the previous ANES survey, this one has fewer missing points. 
+
+
+```{r load data}
+# Data is CCES 2016, download directly online, takes sometime. 
+# https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi%3A10.7910/DVN/GDF6Z0
+load(url("https://dataverse.harvard.edu/api/access/datafile/3004425?format=RData&gbrecs=true"))
+```
+
+
+
+# Some variables of interest
+
+## Possible DV
+```{r potential Dependent Variables}
+#Post test: did you vote in 2016 election
+table(x$CC16_401)
+
+#Pre test: dod you intend to vote in 2016
+table(x$CC16_364)
+
+#Post: who did you vote for in 2016
+table(x$CC16_410a)
+
+#Pre test: did you register to vote
+table(x$votereg) 
+#Pre test: Did you register to vote in District 'x'?
+table(x$votereg_f)
+#Post test: Did you register to vote?
+table(x$votereg_f_post)
+#Post test: did you register to vote in District 'x'? 
+table(x$votereg_post)
+
+```
+
+
+## Possible Inpenedent Variables
+```{r Demographics}
+#--------------------------------------------------------
+#demographics
+
+#gender: male female
+table(x$gender)
+
+#highest education
+table(x$educ)
+
+#race
+table(x$race)
+
+
+#hispanic: are you hispanic or decents?
+table(x$hispanic)
+
+
+#hispanic origin
+# - No country in particular
+table(x$Hispanic_origin_1)
+# - United States
+table(x$Hispanic_origin_2)
+# - Mexico
+table(x$Hispanic_origin_3)
+# - Puerto Rico
+table(x$Hispanic_origin_4)
+# - Cuba
+table(x$Hispanic_origin_5)
+# - Dominican Republic
+table(x$Hispanic_origin_6)
+# - South Amercica
+table(x$Hispanic_origin_7)
+# - Central America
+table(x$Hispanic_origin_8)
+# - Spain
+table(x$Hispanic_origin_9)
+
+#marriage
+table(x$marstat)
+
+#age 
+table(x$birthyr)
+#???table(x$age4)
+
+#education
+table(x$educ)
+
+#state
+table(x$inputstate)
+
+#region
+table(x$region)
+
+#party ID
+table(x$CC16_360)
+
+#employment status
+table(x$employ)
+
+#employment sectors
+table(x$industryclass)
+
+#homeowner
+table(x$ownhome)
+
+#party id
+table(x$pid3)
+table(x$pid7)
+
+#immigration status
+table(x$immstat)
+
+#religion category
+table(x$religpew)
+
+#religious
+table(x$pew_religimp)
+
+#family income
+table(x$faminc)
+```
+
+## Attitudes variables
+
+```{r attitude}
+#in the last year, the national economy has gotten
+table(x$CC16_302)
+
+#in the last year, the household income has gotten
+table(x$CC16_303)
+
+#In the next few years, the national economy will
+table(x$CC16_304)
+
+#Do the police make you feel
+table(x$CC16_307)
+
+#knowledge check: wchich party has the majority seat (House: Republican)
+table(x$CC16_321a)
+#konwledge check: which party has the majority seat (Senate: Republican)
+table(x$CC16_321b)
+
+#Approval rates: do you approve the way each is doing their job:
+table(x$CC16_320a) #President Obama
+table(x$CC16_320b) #US congress
+table(x$CC16_320c) #US supreme court
+
+
+
+```
+
+## Voting Records
+
+```{r vote}
+# vote in 2012 election
+table(x$CC16_316)
+
+# who in 2012
+table(x$CC16_326)
+
+# vote in Presidential primary
+table(x$CC16_328)
+
+```
+
+## Issues 
+
+```{r issue attitudes}
+#immigration: 
+table(x$CC16_331_1) #grant legal status to all illegal immigrants who lived more than 3yrs
+table(x$CC16_331_2) #increase number of border patrols
+table(x$CC16_331_3) #grant legal status to those came in as children
+table(x$CC16_331_7) #identify and deport illegal immigrants
+
+#abortion
+table(x$CC16_332a) #abortion as a matter of choice
+table(x$CC16_332b) #abortion permitted only in case of rape, incest or life in danger
+table(x$CC16_332c) #prohibit abortion after the 20th week
+table(x$CC16_332f) #abortion illegal
+table(x$CC16_332e) #prohibit expenditure of abortion
+
+#crime
+table(x$CC16_334c) #increase number of police on street by 10 percent
+table(x$CC16_334d) #increase prison sentences for felons
+
+#gay
+table(x$CC16_335) #gay marriage legal
+
+#budget cut priority
+table(x$CC16_337_1) #defense
+table(x$CC16_337_2) #domestic
+table(x$CC16_337_3) #raise tax
+
+```
+
+

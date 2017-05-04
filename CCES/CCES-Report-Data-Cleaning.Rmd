@@ -1,0 +1,147 @@
+---
+output: 
+  bookdown::pdf_document2:
+    toc: false
+    citation_package: natbib
+    keep_tex: false
+    fig_caption: true
+    latex_engine: pdflatex
+title: "STP598 Final Project: Predicting 2016 Election Vote Choices"
+author: 
+- Xin Liu (alphabetical)
+- Fan Hong
+- Dantong Huang
+- Hao Wang 
+- Arizona State University
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+# Variable Selection
+```{r, echo=FALSE}
+load(url("https://dataverse.harvard.edu/api/access/datafile/3004425?format=RData&gbrecs=true"))
+```
+
+
+```{r}
+
+library(dplyr)
+mydata <- dplyr::select(x, 
+                        CC16_401, #whether voted or not
+                        CC16_410a, #vote for
+                        gender, #gender
+                        educ, #education
+                        race, #race
+                        marstat, #marriage
+                        inputstate, #state
+                        religpew, #religion
+                        industryclass, #industry class
+                        ownhome, #home owner
+                        immstat, #immigrant
+                        faminc, #family income
+                        employ, #employment status
+                        pid7, #party id
+                        CC16_302, #national econ better: past
+                        CC16_303, #homehold income better: past
+                        CC16_304, # national econ better: next
+                        CC16_307, # feel safe about police
+                        CC16_321a, 
+                        CC16_321b,
+                        CC16_320a,
+                        CC16_320b,
+                        CC16_331_1,
+                        CC16_331_2,
+                        CC16_331_3,
+                        CC16_331_7,
+                        CC16_332a,
+                        CC16_332b, 
+                        CC16_332c, 
+                        CC16_332f,
+                        CC16_334c,
+                        CC16_334d,
+                        CC16_335, 
+                        CC16_337_1,
+                        CC16_337_2,
+                        CC16_337_3)
+
+mydata$race <- factor(mydata$race, ordered = FALSE)
+mydata$inputstate <- factor(mydata$inputstate, ordered = FALSE)
+mydata$religpew <- factor(mydata$religpew, ordered = FALSE)
+mydata$inputstate <- factor(mydata$inputstate, ordered = FALSE)
+mydata$industryclass <- factor(mydata$industryclass, ordered = FALSE)
+mydata$faminc[mydata$faminc == "Prefer not to say"] <- NA
+
+
+#select only trump and clinton
+mydata <- mydata %>%
+          filter(CC16_410a %in% 
+          c("Donald Trump (Republican)", 
+            "Hillary Clinton (Democrat)"))
+
+
+mydata <- na.omit(mydata)
+
+mydata2 <-  dplyr::select(mydata, 
+                        CC16_401, #whether voted or not
+                        CC16_410a, #vote for
+                        gender, #gender
+                        educ, #education
+                        race, #race
+                        marstat, #marriage
+                        inputstate, #state
+                        religpew, #religion
+                        industryclass, #industry class
+                        ownhome, #home owner
+                        immstat, #immigrant
+                        faminc, #family income
+                        employ) #employment status)
+mydata2 <- na.omit(mydata2)
+
+dim(mydata)
+dim(mydata2)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- some reference
+
+```
+setwd("C:/Users/Greg/Desktop/Kaggle/titanic")      
+
+titanic_train <- read.csv("titanic_train.csv")
+
+titanic_train$Pclass <- ordered(titanic_train$Pclass,   # Convert to ordered factor
+                                levels=c("3","2","1"))  
+
+impute <- preProcess(titanic_train[,c(6:8,10)],        # Impute missing ages
+                     method=c("knnImpute"))
+
+titanic_train_imp <- predict(impute, titanic_train[,c(6:8,10)])     
+
+titanic_train <- cbind(titanic_train[,-c(6:8,10)], titanic_train_imp)
+
+titanic_train$Survived <- as.factor(titanic_train$Survived) # Convert target to factor
+```
+-->
